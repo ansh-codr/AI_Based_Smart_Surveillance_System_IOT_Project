@@ -1,0 +1,4 @@
+Flask==3.1.0
+opencv-python==4.10.0.84
+picamera2==0.3.24
+RPi.GPIO==0.7.1
