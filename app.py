@@ -727,7 +727,17 @@ if __name__ == "__main__":
     init_gpio()
     load_known_faces(DATASET_DIR)
     init_camera()
+    host = os.getenv("HOST", "0.0.0.0")
+    preferred_port = int(os.getenv("PORT", "5000"))
+    fallback_port = int(os.getenv("FALLBACK_PORT", "5001"))
+
     try:
-        app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
+        try:
+            app.run(host=host, port=preferred_port, debug=False, threaded=True)
+        except OSError as exc:
+            if "Address already in use" not in str(exc):
+                raise
+            print(f"[SERVER] Port {preferred_port} busy, retrying on {fallback_port}")
+            app.run(host=host, port=fallback_port, debug=False, threaded=True)
     finally:
         cleanup_resources()
