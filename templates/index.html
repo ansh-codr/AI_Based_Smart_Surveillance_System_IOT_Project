@@ -23,14 +23,20 @@
 
     h1 {
       margin-top: 0;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
       font-size: 1.8rem;
     }
 
     .status {
-      margin: 0 0 16px;
+      margin: 0 0 6px;
       font-weight: 600;
-      color: #15803d;
+      color: #0f766e;
+    }
+
+    .meta {
+      margin: 0 0 16px;
+      font-size: 0.95rem;
+      color: #475569;
     }
 
     .video {
@@ -39,13 +45,78 @@
       border: 1px solid #d1d5db;
       background: #111827;
     }
+
+    .capture-block {
+      margin-top: 18px;
+      border-top: 1px solid #e5e7eb;
+      padding-top: 16px;
+    }
+
+    .capture-title {
+      margin: 0 0 10px;
+      font-size: 1.05rem;
+    }
+
+    .capture {
+      width: 100%;
+      max-width: 360px;
+      border-radius: 8px;
+      border: 1px solid #d1d5db;
+      display: none;
+      background: #0f172a;
+    }
+
+    .capture-placeholder {
+      margin: 0;
+      color: #64748b;
+      font-size: 0.95rem;
+    }
   </style>
 </head>
 <body>
   <main class="dashboard">
     <h1>Smart Surveillance System</h1>
-    <p class="status">System Active</p>
-    <img class="video" src="/video" alt="Live webcam feed" />
+    <p id="statusText" class="status">No Motion</p>
+    <p id="meta" class="meta">Loading system status...</p>
+    <img class="video" src="/video_feed" alt="Live camera feed" />
+
+    <section class="capture-block">
+      <h2 class="capture-title">Last Captured Intruder Image</h2>
+      <p id="capturePlaceholder" class="capture-placeholder">No image captured yet.</p>
+      <img id="lastCapture" class="capture" alt="Last intruder capture" />
+    </section>
   </main>
+
+  <script>
+    const statusTextEl = document.getElementById("statusText");
+    const metaEl = document.getElementById("meta");
+    const captureEl = document.getElementById("lastCapture");
+    const capturePlaceholderEl = document.getElementById("capturePlaceholder");
+
+    async function refreshStatus() {
+      try {
+        const response = await fetch("/status", { cache: "no-store" });
+        const data = await response.json();
+
+        statusTextEl.textContent = data.status_text || "No Motion";
+        metaEl.textContent = `Known faces: ${data.known_faces} | Camera: ${data.camera_ready ? "Ready" : "Error"} | GPIO: ${data.gpio_ready ? "Ready" : "Unavailable"}`;
+
+        if (data.last_image) {
+          captureEl.src = `${data.last_image}?t=${Date.now()}`;
+          captureEl.style.display = "block";
+          capturePlaceholderEl.style.display = "none";
+        } else {
+          captureEl.style.display = "none";
+          capturePlaceholderEl.style.display = "block";
+        }
+      } catch (_err) {
+        statusTextEl.textContent = "No Motion";
+        metaEl.textContent = "Status unavailable";
+      }
+    }
+
+    refreshStatus();
+    setInterval(refreshStatus, 1500);
+  </script>
 </body>
 </html>
