@@ -210,14 +210,23 @@ def init_camera():
 
 
 def stop_camera():
-    global camera
-    if camera is None:
-        return
+    global camera, cv_camera, camera_backend
+
     try:
-        camera.stop()
+        if camera is not None:
+            camera.stop()
     except Exception:
         pass
+
+    try:
+        if cv_camera is not None:
+            cv_camera.release()
+    except Exception:
+        pass
+
     camera = None
+    cv_camera = None
+    camera_backend = "none"
 
 
 def capture_camera_frame():
@@ -227,20 +236,45 @@ def capture_camera_frame():
         frame_error = camera_error
         return None
 
-    try:
-        frame = camera.capture_array()
-    except Exception as exc:
-        frame_error = str(exc)
-        camera_error = frame_error
-        stop_camera()
-        return None
+    if camera_backend == "picamera2":
+        try:
+            frame = camera.capture_array()
+        except Exception as exc:
+            frame_error = f"Picamera2 frame read failed: {exc}"
+            camera_error = frame_error
+            stop_camera()
+            return None
 
-    if frame is None:
-        frame_error = "Frame read failure"
-        return None
+        if frame is None:
+            frame_error = "Frame read failure"
+            return None
 
-    frame_error = None
-    return cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        frame_error = None
+        return cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+
+    if camera_backend == "opencv":
+        try:
+            ok, frame = cv_camera.read()
+        except Exception as exc:
+            frame_error = f"OpenCV frame read failed: {exc}"
+            camera_error = frame_error
+            stop_camera()
+            return None
+
+        if not ok or frame is None:
+            frame_error = "OpenCV frame read failure"
+            camera_error = frame_error
+            stop_camera()
+            return None
+
+        if frame.shape[1] != FRAME_WIDTH or frame.shape[0] != FRAME_HEIGHT:
+            frame = cv2.resize(frame, (FRAME_WIDTH, FRAME_HEIGHT))
+
+        frame_error = None
+        return frame
+
+    frame_error = "Camera backend unavailable"
+    return None
 
 
 # ------------------------------
@@ -640,7 +674,8 @@ def status():
 
     state.update(
         {
-            "camera_ready": camera is not None,
+            "camera_ready": camera_backend in ("picamera2", "opencv"),
+            "camera_backend": camera_backend,
             "camera_error": camera_error,
             "frame_error": frame_error,
             "gpio_ready": gpio_ready,
