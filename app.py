@@ -162,25 +162,50 @@ def read_motion_sensor():
 # Camera handling
 # ------------------------------
 def init_camera():
-    global camera, camera_error
-    if camera is not None:
+    global camera, cv_camera, camera_error, camera_backend, picamera_failed_once
+    if camera_backend in ("picamera2", "opencv"):
         return True
 
-    if Picamera2 is None:
-        camera_error = "Picamera2 is not installed"
-        return False
+    if Picamera2 is not None and not picamera_failed_once:
+        try:
+            cam = Picamera2()
+            config = cam.create_video_configuration(main={"size": (FRAME_WIDTH, FRAME_HEIGHT)})
+            cam.configure(config)
+            cam.start()
+            camera = cam
+            cv_camera = None
+            camera_backend = "picamera2"
+            camera_error = None
+            app.logger.info("Camera backend in use: Picamera2")
+            print("[CAMERA] Using Picamera2")
+            return True
+        except Exception as exc:
+            camera = None
+            picamera_failed_once = True
+            camera_error = f"Picamera2 init failed: {exc}"
+            app.logger.warning(camera_error)
+            print(f"[CAMERA] {camera_error}; falling back to OpenCV VideoCapture")
 
     try:
-        cam = Picamera2()
-        config = cam.create_video_configuration(main={"size": (FRAME_WIDTH, FRAME_HEIGHT)})
-        cam.configure(config)
-        cam.start()
-        camera = cam
+        cap = cv2.VideoCapture(USB_CAMERA_INDEX)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, FRAME_WIDTH)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, FRAME_HEIGHT)
+        if not cap.isOpened():
+            cap.release()
+            raise RuntimeError("VideoCapture camera open failed")
+
+        cv_camera = cap
+        camera = None
+        camera_backend = "opencv"
         camera_error = None
+        app.logger.info("Camera backend in use: OpenCV VideoCapture")
+        print("[CAMERA] Using OpenCV VideoCapture fallback")
         return True
     except Exception as exc:
-        camera = None
-        camera_error = str(exc)
+        cv_camera = None
+        camera_backend = "none"
+        camera_error = f"No camera available: {exc}"
+        app.logger.error(camera_error)
         return False
 
 
