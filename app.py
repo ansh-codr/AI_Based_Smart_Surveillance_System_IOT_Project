@@ -3,11 +3,11 @@ import os
 import time
 from datetime import datetime
 from threading import Lock
-from urllib import parse, request
+from urllib import parse, request as urlrequest
 
 import cv2
 import numpy as np
-from flask import Flask, Response, jsonify, render_template
+from flask import Flask, Response, jsonify, render_template, request
 from jinja2 import TemplateNotFound
 
 try:
@@ -408,8 +408,8 @@ def send_mobile_alert(message, image_path=None):
         try:
             base = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
             data = parse.urlencode({"chat_id": TELEGRAM_CHAT_ID, "text": message}).encode("utf-8")
-            req = request.Request(f"{base}/sendMessage", data=data, method="POST")
-            with request.urlopen(req, timeout=6):
+            req = urlrequest.Request(f"{base}/sendMessage", data=data, method="POST")
+            with urlrequest.urlopen(req, timeout=6):
                 pass
         except Exception:
             pass
@@ -431,13 +431,13 @@ def send_mobile_alert(message, image_path=None):
                 body.append(photo_bytes)
                 body.append(f"--{boundary}--".encode())
                 payload = b"\r\n".join(body)
-                req = request.Request(
+                req = urlrequest.Request(
                     f"{base}/sendPhoto",
                     data=payload,
                     method="POST",
                     headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
                 )
-                with request.urlopen(req, timeout=8):
+                with urlrequest.urlopen(req, timeout=8):
                     pass
             except Exception:
                 pass
@@ -446,8 +446,8 @@ def send_mobile_alert(message, image_path=None):
     if ALERT_WEBHOOK_URL:
         try:
             payload = parse.urlencode({"message": message, "image": image_path or ""}).encode("utf-8")
-            req = request.Request(ALERT_WEBHOOK_URL, data=payload, method="POST")
-            with request.urlopen(req, timeout=6):
+            req = urlrequest.Request(ALERT_WEBHOOK_URL, data=payload, method="POST")
+            with urlrequest.urlopen(req, timeout=6):
                 pass
         except Exception:
             pass

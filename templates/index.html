@@ -52,6 +52,49 @@
       padding-top: 16px;
     }
 
+    .enroll-block {
+      margin-top: 18px;
+      border-top: 1px solid #e5e7eb;
+      padding-top: 16px;
+    }
+
+    .enroll-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+
+    .enroll-input {
+      min-width: 220px;
+      padding: 8px 10px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      font-size: 0.95rem;
+    }
+
+    .enroll-btn {
+      padding: 8px 12px;
+      border: 0;
+      border-radius: 8px;
+      font-weight: 600;
+      background: #0f766e;
+      color: #ffffff;
+      cursor: pointer;
+    }
+
+    .enroll-btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .enroll-msg {
+      margin: 10px 0 0;
+      font-size: 0.92rem;
+      color: #334155;
+    }
+
     .capture-title {
       margin: 0 0 10px;
       font-size: 1.05rem;
@@ -85,6 +128,16 @@
       <p id="capturePlaceholder" class="capture-placeholder">No image captured yet.</p>
       <img id="lastCapture" class="capture" alt="Last intruder capture" />
     </section>
+
+    <section class="enroll-block">
+      <h2 class="capture-title">Enroll Unknown Person</h2>
+      <p class="capture-placeholder">When an unknown face is detected, add name and enroll to dataset.</p>
+      <div class="enroll-row">
+        <input id="enrollName" class="enroll-input" type="text" placeholder="Enter person name" />
+        <button id="enrollBtn" class="enroll-btn" type="button">Enroll to Database</button>
+      </div>
+      <p id="enrollMessage" class="enroll-msg"></p>
+    </section>
   </main>
 
   <script>
@@ -92,6 +145,10 @@
     const metaEl = document.getElementById("meta");
     const captureEl = document.getElementById("lastCapture");
     const capturePlaceholderEl = document.getElementById("capturePlaceholder");
+    const enrollBtn = document.getElementById("enrollBtn");
+    const enrollName = document.getElementById("enrollName");
+    const enrollMessage = document.getElementById("enrollMessage");
+    let canEnrollUnknown = false;
 
     async function refreshStatus() {
       try {
@@ -100,6 +157,11 @@
 
         statusTextEl.textContent = data.status_text || "No Motion";
         metaEl.textContent = `Known faces: ${data.known_faces} | Camera: ${data.camera_ready ? "Ready" : "Error"} | GPIO: ${data.gpio_ready ? "Ready" : "Unavailable"}`;
+        canEnrollUnknown = !!data.can_enroll_unknown;
+        enrollBtn.disabled = !canEnrollUnknown;
+        if (!canEnrollUnknown && !enrollMessage.textContent) {
+          enrollMessage.textContent = "No recent unknown face available for enrollment.";
+        }
 
         if (data.last_image) {
           captureEl.src = `${data.last_image}?t=${Date.now()}`;
@@ -114,6 +176,41 @@
         metaEl.textContent = "Status unavailable";
       }
     }
+
+    async function enrollUnknownPerson() {
+      const name = enrollName.value.trim();
+      if (!name) {
+        enrollMessage.textContent = "Please enter a person name.";
+        return;
+      }
+      if (!canEnrollUnknown) {
+        enrollMessage.textContent = "Unknown face not available yet. Wait for detection.";
+        return;
+      }
+
+      enrollBtn.disabled = true;
+      enrollMessage.textContent = "Enrolling...";
+      try {
+        const response = await fetch("/enroll", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name })
+        });
+        const data = await response.json();
+
+        if (!response.ok || !data.ok) {
+          enrollMessage.textContent = data.message || "Enrollment failed.";
+        } else {
+          enrollMessage.textContent = `Enrolled ${name} successfully.`;
+          enrollName.value = "";
+        }
+      } catch (_err) {
+        enrollMessage.textContent = "Enrollment request failed.";
+      }
+      await refreshStatus();
+    }
+
+    enrollBtn.addEventListener("click", enrollUnknownPerson);
 
     refreshStatus();
     setInterval(refreshStatus, 1500);
