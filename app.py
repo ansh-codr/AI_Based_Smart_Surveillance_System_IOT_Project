@@ -101,6 +101,8 @@ status_text = "No Motion"
 last_capture_file = None
 last_intrusion_alert_time = 0.0
 last_intruder_save_time = 0.0
+last_unknown_face_crop = None
+last_unknown_seen_time = 0.0
 
 # Lightweight person detector
 hog = cv2.HOGDescriptor()
@@ -305,7 +307,37 @@ def recognize_faces(frame):
                     label = known_face_names[best_index]
         labels.append(label)
 
-    return locations, labels
+    return locations, labels, encodings
+
+
+def get_recent_unknown_face(max_age_seconds=30):
+    if last_unknown_face_crop is None:
+        return None
+    if (time.monotonic() - last_unknown_seen_time) > max_age_seconds:
+        return None
+    return last_unknown_face_crop
+
+
+def enroll_face_to_dataset(person_name):
+    clean_name = "".join(ch for ch in person_name.strip() if ch.isalnum() or ch in ("_", "-", " ")).strip()
+    if not clean_name:
+        return False, "Invalid person name"
+
+    face_crop = get_recent_unknown_face()
+    if face_crop is None:
+        return False, "No recent unknown face available to enroll"
+
+    target_dir = os.path.join(DATASET_DIR, clean_name)
+    os.makedirs(target_dir, exist_ok=True)
+    filename = f"enroll_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
+    full_path = os.path.join(target_dir, filename)
+
+    ok = cv2.imwrite(full_path, face_crop)
+    if not ok:
+        return False, "Failed to save enrolled face"
+
+    load_known_faces(DATASET_DIR)
+    return True, full_path
 
 
 def draw_annotations(frame, person_boxes, face_locations, face_labels):
@@ -456,7 +488,7 @@ def multipart_frame(payload):
 # Main processing pipeline
 # ------------------------------
 def stream_frames():
-    global intrusion_detected, motion_detected, status_text
+    global intrusion_detected, motion_detected, status_text, last_unknown_face_crop, last_unknown_seen_time
 
     frame_count = 0
     last_person_boxes = []
@@ -501,14 +533,26 @@ def stream_frames():
         has_person = len(last_person_boxes) > 0
 
         if has_person and frame_count % FACE_EVERY_N_FRAMES == 0:
-            last_face_locations, last_face_labels = recognize_faces(frame)
+            last_face_locations, last_face_labels, face_encodings = recognize_faces(frame)
+
+            for (top, right, bottom, left), label in zip(last_face_locations, last_face_labels):
+                if label != "Intruder":
+                    continue
+                top = max(0, top)
+                left = max(0, left)
+                right = min(frame.shape[1], right)
+                bottom = min(frame.shape[0], bottom)
+                if right <= left or bottom <= top:
+                    continue
+                crop = frame[top:bottom, left:right].copy()
+                if crop.size == 0:
+                    continue
+                last_unknown_face_crop = crop
+                last_unknown_seen_time = time.monotonic()
         elif not has_person:
             last_face_locations, last_face_labels = [], []
 
         has_intruder = has_person and any(name == "Intruder" for name in last_face_labels)
-        # If a person is detected but no face is detected, fail-safe as intruder.
-        if has_person and len(last_face_labels) == 0:
-            has_intruder = True
 
         if has_intruder:
             set_alert_outputs(True)
@@ -575,6 +619,7 @@ def status():
             "dataset_error": dataset_error,
             "known_faces": len(known_face_encodings),
             "last_image": f"/static/captures/{last_capture_file}" if last_capture_file else None,
+            "can_enroll_unknown": get_recent_unknown_face() is not None,
             "pir_pin": PIR_PIN,
             "led_pin": LED_PIN,
             "buzzer_pin": BUZZER_PIN,
@@ -582,6 +627,26 @@ def status():
         }
     )
     return jsonify(state)
+
+
+@app.route("/enroll", methods=["POST"])
+def enroll():
+    try:
+        payload = request.get_json(silent=True) or {}
+        person_name = str(payload.get("name", "")).strip()
+        ok, result = enroll_face_to_dataset(person_name)
+        if not ok:
+            return jsonify({"ok": False, "message": result}), 400
+        return jsonify(
+            {
+                "ok": True,
+                "message": "Person enrolled successfully",
+                "path": result,
+                "known_faces": len(known_face_encodings),
+            }
+        )
+    except Exception as exc:
+        return jsonify({"ok": False, "message": f"Enrollment failed: {exc}"}), 500
 
 
 def cleanup_resources():
