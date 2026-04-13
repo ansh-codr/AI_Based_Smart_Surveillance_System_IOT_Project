@@ -1,5 +1,6 @@
 import glob
 import os
+import socket
 import time
 from datetime import datetime
 from threading import Lock
@@ -593,10 +594,8 @@ def stream_frames():
             detected = detect_people(frame)
             last_person_boxes = scale_person_boxes(detected, frame)
 
-        has_person = len(last_person_boxes) > 0
-
-        if has_person and frame_count % FACE_EVERY_N_FRAMES == 0:
-            last_face_locations, last_face_labels, face_encodings = recognize_faces(frame)
+        if frame_count % FACE_EVERY_N_FRAMES == 0:
+            last_face_locations, last_face_labels, _face_encodings = recognize_faces(frame)
 
             for (top, right, bottom, left), label in zip(last_face_locations, last_face_labels):
                 if label != "Intruder":
@@ -612,10 +611,22 @@ def stream_frames():
                     continue
                 last_unknown_face_crop = crop
                 last_unknown_seen_time = time.monotonic()
-        elif not has_person:
-            last_face_locations, last_face_labels = [], []
 
-        has_intruder = has_person and any(name == "Intruder" for name in last_face_labels)
+        person_from_hog = len(last_person_boxes) > 0
+        person_from_face = len(last_face_locations) > 0
+        has_person = person_from_hog or person_from_face
+        has_known_face = any(name != "Intruder" for name in last_face_labels)
+        has_unknown_face = any(name == "Intruder" for name in last_face_labels)
+
+        if not has_person:
+            has_intruder = False
+        elif has_unknown_face:
+            has_intruder = True
+        elif has_known_face:
+            has_intruder = False
+        else:
+            # Person detected but face not matched/visible.
+            has_intruder = True
 
         if has_intruder:
             set_alert_outputs(True)
@@ -628,7 +639,7 @@ def stream_frames():
             set_alert_outputs(False)
             with status_lock:
                 intrusion_detected = False
-                status_text = "Motion Detected" if has_person else "No Motion"
+                status_text = "Motion Detected"
 
         draw_annotations(frame, last_person_boxes, last_face_locations, last_face_labels)
         frame_count += 1
@@ -731,13 +742,22 @@ if __name__ == "__main__":
     preferred_port = int(os.getenv("PORT", "5000"))
     fallback_port = int(os.getenv("FALLBACK_PORT", "5001"))
 
-    try:
+    def _port_available(port):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
-            app.run(host=host, port=preferred_port, debug=False, threaded=True)
-        except OSError as exc:
-            if "Address already in use" not in str(exc):
-                raise
-            print(f"[SERVER] Port {preferred_port} busy, retrying on {fallback_port}")
-            app.run(host=host, port=fallback_port, debug=False, threaded=True)
+            sock.bind((host, port))
+            return True
+        except OSError:
+            return False
+        finally:
+            sock.close()
+
+    port_to_use = preferred_port if _port_available(preferred_port) else fallback_port
+    if port_to_use != preferred_port:
+        print(f"[SERVER] Port {preferred_port} busy, starting on {port_to_use}")
+
+    try:
+        app.run(host=host, port=port_to_use, debug=False, threaded=True)
     finally:
         cleanup_resources()
