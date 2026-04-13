@@ -80,16 +80,20 @@ CAPTURE_DIR = os.path.join("static", "captures")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
 ALERT_WEBHOOK_URL = os.getenv("ALERT_WEBHOOK_URL", "").strip()
+USB_CAMERA_INDEX = int(os.getenv("USB_CAMERA_INDEX", "0"))
 
 app = Flask(__name__)
 
 # Runtime state
 camera = None
+cv_camera = None
 camera_error = None
 frame_error = None
 gpio_error = None
 gpio_ready = False
 dataset_error = None
+camera_backend = "none"
+picamera_failed_once = False
 
 known_face_encodings = []
 known_face_names = []
