@@ -156,7 +156,7 @@
         const data = await response.json();
 
         statusTextEl.textContent = data.status_text || "No Motion";
-        metaEl.textContent = `Known faces: ${data.known_faces} | Camera: ${data.camera_ready ? "Ready" : "Error"} | GPIO: ${data.gpio_ready ? "Ready" : "Unavailable"}`;
+        metaEl.textContent = `Known faces: ${data.known_faces} | Camera: ${data.camera_ready ? "Ready" : "Error"} (${data.camera_backend || "none"}) | GPIO: ${data.gpio_ready ? "Ready" : "Unavailable"}`;
         canEnrollUnknown = !!data.can_enroll_unknown;
         enrollBtn.disabled = !canEnrollUnknown;
         if (!canEnrollUnknown && !enrollMessage.textContent) {
