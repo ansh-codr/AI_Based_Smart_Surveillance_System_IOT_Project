@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pi Smart Monitor</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+  <header class="header">
+    <div class="brand">
+      <span class="brand-mark">Pi</span>
+      <div>
+        <h1>Smart Monitor</h1>
+        <p>Edge surveillance and alerts</p>
+      </div>
+    </div>
+    <div class="status-pill" id="systemStatus">Booting</div>
+  </header>
+
+  <main class="container">
+    <section class="grid">
+      <article class="card">
+        <h2>Live Feed</h2>
+        <div class="video-wrap">
+          <img class="video" src="/video" alt="Live camera feed" />
+        </div>
+      </article>
+
+      <article class="card">
+        <h2>System Status</h2>
+        <ul class="status-list">
+          <li>
+            <span>Motion</span>
+            <span class="pill" id="motionStatus">--</span>
+          </li>
+          <li>
+            <span>Intrusion</span>
+            <span class="pill" id="intrusionStatus">--</span>
+          </li>
+          <li>
+            <span>Camera</span>
+            <span class="pill" id="cameraStatus">--</span>
+          </li>
+          <li>
+            <span>GPIO</span>
+            <span class="pill" id="gpioStatus">--</span>
+          </li>
+        </ul>
+        <div class="alert" id="errorBox" hidden></div>
+      </article>
+
+      <article class="card">
+        <h2>Recent Events</h2>
+        <ol class="events" id="eventList"></ol>
+      </article>
+
+      <article class="card">
+        <h2>System Notes</h2>
+        <div class="notes">
+          <p>Polling every 2 seconds for status updates.</p>
+          <p>Snapshots saved to <strong>data/intruder.jpg</strong>.</p>
+          <p>Firebase sync active when credentials are configured.</p>
+        </div>
+      </article>
+
+      <article class="card">
+        <h2>Enroll New Face</h2>
+        <div class="notes">
+          <p>Stand in front of the camera and click save.</p>
+        </div>
+        <div class="form-row">
+          <input type="text" id="faceName" placeholder="Person name" />
+          <button class="button" id="saveFace">Save Face</button>
+        </div>
+        <div class="alert" id="enrollStatus" hidden></div>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const motionStatus = document.getElementById('motionStatus');
+    const intrusionStatus = document.getElementById('intrusionStatus');
+    const cameraStatus = document.getElementById('cameraStatus');
+    const gpioStatus = document.getElementById('gpioStatus');
+    const systemStatus = document.getElementById('systemStatus');
+    const errorBox = document.getElementById('errorBox');
+    const eventList = document.getElementById('eventList');
+    const faceName = document.getElementById('faceName');
+    const saveFace = document.getElementById('saveFace');
+    const enrollStatus = document.getElementById('enrollStatus');
+
+    function setPill(el, ok, label) {
+      el.textContent = label;
+      el.classList.toggle('pill-ok', ok);
+      el.classList.toggle('pill-warn', !ok);
+    }
+
+    function renderEvents(events) {
+      eventList.innerHTML = '';
+      if (!events.length) {
+        const li = document.createElement('li');
+        li.textContent = 'No events yet.';
+        eventList.appendChild(li);
+        return;
+      }
+      events.forEach((event) => {
+        const li = document.createElement('li');
+        li.innerHTML = `
+          <span class="event-kind">${event.kind.replace('_', ' ')}</span>
+          <span class="event-detail">${event.detail}</span>
+          <span class="event-time">${new Date(event.timestamp).toLocaleTimeString()}</span>
+        `;
+        eventList.appendChild(li);
+      });
+    }
+
+    async function refreshStatus() {
+      try {
+        const [statusRes, eventRes] = await Promise.all([
+          fetch('/status'),
+          fetch('/events?limit=8')
+        ]);
+        const status = await statusRes.json();
+        const events = await eventRes.json();
+
+        setPill(motionStatus, status.motion_detected, status.motion_detected ? 'Active' : 'Idle');
+        setPill(intrusionStatus, status.intrusion_detected, status.intrusion_detected ? 'Detected' : 'Clear');
+        setPill(cameraStatus, status.camera_ready, status.camera_ready ? 'Ready' : 'Down');
+        setPill(gpioStatus, status.gpio_ready, status.gpio_ready ? 'Ready' : 'Down');
+
+        const isHealthy = status.camera_ready && status.gpio_ready;
+        systemStatus.textContent = isHealthy ? 'System OK' : 'Degraded';
+        systemStatus.classList.toggle('status-ok', isHealthy);
+        systemStatus.classList.toggle('status-warn', !isHealthy);
+
+        const errorText = [status.camera_error, status.frame_error, status.gpio_error]
+          .filter(Boolean)
+          .join(' | ');
+        if (errorText) {
+          errorBox.hidden = false;
+          errorBox.textContent = errorText;
+        } else {
+          errorBox.hidden = true;
+        }
+
+        renderEvents(events.events || []);
+      } catch (err) {
+        systemStatus.textContent = 'Offline';
+        systemStatus.classList.add('status-warn');
+      }
+    }
+
+    refreshStatus();
+    setInterval(refreshStatus, 2000);
+
+    async function enrollFace() {
+      const name = (faceName.value || '').trim();
+      if (!name) {
+        enrollStatus.hidden = false;
+        enrollStatus.textContent = 'Enter a name first.';
+        return;
+      }
+
+      enrollStatus.hidden = false;
+      enrollStatus.textContent = 'Capturing...';
+
+      try {
+        const response = await fetch('/enroll', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name })
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          enrollStatus.textContent = data.error || 'Enrollment failed.';
+          return;
+        }
+        enrollStatus.textContent = `Saved for ${name}`;
+        faceName.value = '';
+      } catch (err) {
+        enrollStatus.textContent = 'Enrollment failed.';
+      }
+    }
+
+    saveFace.addEventListener('click', enrollFace);
+  </script>
+</body>
+</html>

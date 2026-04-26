@@ -1,0 +1,15 @@
+[Unit]
+Description=Raspberry Pi Smart Monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/pi/Desktop/IOT
+ExecStart=/usr/bin/python3 /home/pi/Desktop/IOT/app.py
+Restart=always
+RestartSec=2
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

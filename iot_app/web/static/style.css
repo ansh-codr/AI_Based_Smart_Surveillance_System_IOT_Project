@@ -1,0 +1,255 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap');
+
+:root {
+  --bg: #0b1116;
+  --panel: #121a22;
+  --panel-2: #0f171f;
+  --text: #eef2f6;
+  --muted: #9fb0c2;
+  --accent: #27d17f;
+  --accent-2: #f4b942;
+  --warn: #f97316;
+  --border: #1f2a36;
+  --shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'Space Grotesk', sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(900px 400px at 10% -10%, rgba(39, 209, 127, 0.2), transparent 60%),
+    radial-gradient(800px 400px at 100% 0%, rgba(244, 185, 66, 0.18), transparent 60%),
+    var(--bg);
+  min-height: 100vh;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.5rem 2rem;
+  border-bottom: 1px solid var(--border);
+  background: rgba(9, 14, 19, 0.85);
+  backdrop-filter: blur(8px);
+}
+
+.brand {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.brand-mark {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #27d17f, #0e7e55);
+  color: #041b11;
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.brand h1 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.brand p {
+  margin: 0.1rem 0 0;
+  color: var(--muted);
+}
+
+.status-pill {
+  padding: 0.35rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-weight: 600;
+}
+
+.status-ok {
+  background: rgba(39, 209, 127, 0.15);
+  border-color: rgba(39, 209, 127, 0.4);
+  color: var(--accent);
+}
+
+.status-warn {
+  background: rgba(249, 115, 22, 0.15);
+  border-color: rgba(249, 115, 22, 0.4);
+  color: var(--warn);
+}
+
+.container {
+  max-width: 1100px;
+  margin: 2rem auto 3rem;
+  padding: 0 2rem;
+}
+
+.grid {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.card {
+  background: linear-gradient(180deg, var(--panel), var(--panel-2));
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 1.4rem;
+  box-shadow: var(--shadow);
+}
+
+.card h2 {
+  margin-top: 0;
+  font-size: 1.1rem;
+}
+
+.video-wrap {
+  margin-top: 1rem;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #1d2833;
+}
+
+.video {
+  width: 100%;
+  display: block;
+  background: #02070d;
+}
+
+.status-list {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.status-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.pill {
+  font-family: 'JetBrains Mono', monospace;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 0.8rem;
+}
+
+.pill-ok {
+  color: var(--accent);
+  border-color: rgba(39, 209, 127, 0.4);
+  background: rgba(39, 209, 127, 0.12);
+}
+
+.pill-warn {
+  color: var(--warn);
+  border-color: rgba(249, 115, 22, 0.4);
+  background: rgba(249, 115, 22, 0.12);
+}
+
+.alert {
+  margin-top: 1rem;
+  padding: 0.8rem;
+  border-radius: 12px;
+  border: 1px solid rgba(249, 115, 22, 0.4);
+  background: rgba(249, 115, 22, 0.15);
+  color: var(--warn);
+  font-size: 0.9rem;
+}
+
+.events {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0 0;
+  display: grid;
+  gap: 0.8rem;
+}
+
+.events li {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.7rem;
+  border-radius: 12px;
+  background: rgba(8, 12, 18, 0.45);
+  border: 1px solid #18232e;
+}
+
+.event-kind {
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.event-detail {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.event-time {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--accent-2);
+}
+
+.notes p {
+  margin: 0 0 0.6rem;
+  color: var(--muted);
+}
+
+.notes strong {
+  color: var(--text);
+}
+
+.form-row {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.form-row input {
+  flex: 1;
+  padding: 0.6rem 0.8rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(8, 12, 18, 0.6);
+  color: var(--text);
+}
+
+.button {
+  padding: 0.6rem 1rem;
+  border-radius: 10px;
+  border: 1px solid rgba(39, 209, 127, 0.4);
+  background: rgba(39, 209, 127, 0.2);
+  color: var(--text);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.button:hover {
+  background: rgba(39, 209, 127, 0.3);
+}
+
+@media (max-width: 720px) {
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+
+  .container {
+    padding: 0 1.25rem;
+  }
+
+  .form-row {
+    flex-direction: column;
+  }
+}
