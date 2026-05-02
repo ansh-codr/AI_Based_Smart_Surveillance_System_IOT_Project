@@ -1,0 +1,30 @@
+# Python cache
+__pycache__/
+*.py[cod]
+**/__pycache__/
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+
+# Secrets
+.env
+.env.*
+/secrets/
+secrets/*.json
+*service-account*.json
+ai-surveillance-vision-*.json
+
+# Local runtime files
+*.log
+*.pid
+monitor.log
+
+# Camera snapshots and face dataset (do not push personal images)
+known_faces/
+known_faces/**
+data/*.jpg
+data/*.jpeg
+data/*.png
+intruder.jpg

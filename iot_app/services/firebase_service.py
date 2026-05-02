@@ -42,3 +42,6 @@ class FirebaseService:
             self.db.collection("events").add(event)
         except Exception:
             self.logger.exception("Firebase write failed")
+
+    def cleanup(self):
+        return None

@@ -1,0 +1,581 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI Surveillance Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #071018;
+      --bg-2: #0b1720;
+      --panel: rgba(13, 24, 34, 0.92);
+      --panel-2: rgba(17, 31, 43, 0.95);
+      --outline: rgba(164, 190, 210, 0.14);
+      --text: #eaf2f8;
+      --muted: #91a3b5;
+      --green: #43e6b0;
+      --amber: #f1c45a;
+      --red: #ff6a7d;
+      --shadow: 0 20px 60px rgba(0, 0, 0, 0.32);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; }
+    body {
+      margin: 0;
+      font-family: "Space Grotesk", system-ui, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(900px 500px at 8% 0%, rgba(67, 230, 176, 0.18), transparent 55%),
+        radial-gradient(800px 420px at 92% 10%, rgba(241, 196, 90, 0.12), transparent 60%),
+        linear-gradient(180deg, #061019 0%, #08131b 100%);
+    }
+
+    .shell { max-width: 1600px; margin: 0 auto; padding: 24px; }
+    .hero {
+      display: grid;
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .brand-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-mark {
+      width: 44px;
+      height: 44px;
+      display: grid;
+      place-items: center;
+      border-radius: 14px;
+      background: linear-gradient(135deg, rgba(67, 230, 176, 0.95), rgba(33, 120, 188, 0.95));
+      color: #041017;
+      font-weight: 800;
+      box-shadow: var(--shadow);
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 28px;
+      line-height: 1.05;
+    }
+
+    .brand p { margin: 4px 0 0; color: var(--muted); }
+    .device-pill {
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--outline);
+      color: var(--muted);
+      font-family: "JetBrains Mono", monospace;
+      font-size: 12px;
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+    }
+
+    .status-card {
+      background: linear-gradient(145deg, rgba(12, 22, 32, 0.94), rgba(18, 31, 44, 0.88));
+      border: 1px solid var(--outline);
+      border-radius: 16px;
+      padding: 14px 16px;
+      box-shadow: var(--shadow);
+    }
+
+    .status-card .label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.12em; }
+    .status-card .value { margin-top: 8px; font-size: 17px; font-weight: 700; }
+    .ok { color: var(--green); }
+    .warn { color: var(--amber); }
+    .bad { color: var(--red); }
+    .mono { font-family: "JetBrains Mono", monospace; }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 1.25fr 0.9fr 0.9fr;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--outline);
+      border-radius: 20px;
+      padding: 18px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+    }
+
+    .panel h2 {
+      margin: 0 0 14px;
+      font-size: 15px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .live-frame {
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid rgba(67, 230, 176, 0.16);
+      background: #061018;
+      min-height: 320px;
+    }
+
+    .live-frame img {
+      display: block;
+      width: 100%;
+      height: auto;
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
+      background: #061018;
+    }
+
+    .feed-meta {
+      margin-top: 12px;
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .verification {
+      display: grid;
+      gap: 14px;
+    }
+
+    .verification-box {
+      padding: 18px;
+      border-radius: 18px;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      min-height: 220px;
+      display: grid;
+      gap: 10px;
+      align-content: start;
+    }
+
+    .big-state {
+      font-size: 28px;
+      line-height: 1.1;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+
+    .big-state.ok { color: var(--green); }
+    .big-state.bad { color: var(--red); }
+
+    .detail-grid {
+      display: grid;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .metric {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(6, 14, 22, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .metric strong { color: var(--text); font-weight: 700; }
+
+    .enroll-form {
+      display: grid;
+      gap: 12px;
+    }
+
+    .input, .button {
+      border-radius: 14px;
+      border: 1px solid var(--outline);
+      font: inherit;
+      transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+    }
+
+    .input {
+      width: 100%;
+      padding: 14px 16px;
+      color: var(--text);
+      background: rgba(6, 14, 22, 0.82);
+      outline: none;
+    }
+
+    .input:focus {
+      border-color: rgba(67, 230, 176, 0.55);
+    }
+
+    .button {
+      padding: 13px 16px;
+      cursor: pointer;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--green), #2dbd93);
+      color: #031018;
+    }
+
+    .button.secondary {
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text);
+    }
+
+    .button:hover { transform: translateY(-1px); }
+
+    .message {
+      min-height: 20px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .user-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 0;
+      margin: 0;
+      list-style: none;
+    }
+
+    .user-list li {
+      padding: 8px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      color: var(--text);
+      font-size: 13px;
+    }
+
+    .alerts {
+      margin-top: 18px;
+      background: var(--panel-2);
+      border: 1px solid var(--outline);
+      border-radius: 20px;
+      padding: 18px;
+      box-shadow: var(--shadow);
+    }
+
+    .alerts-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+
+    .alerts-header h2 {
+      margin: 0;
+      font-size: 15px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .alerts-header .subtitle { color: var(--muted); font-size: 13px; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+    }
+
+    thead th {
+      text-align: left;
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 12px 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    tbody td {
+      padding: 12px 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      vertical-align: top;
+      font-size: 13px;
+    }
+
+    tbody tr.recognised { background: rgba(67, 230, 176, 0.07); }
+    tbody tr.unknown { background: rgba(255, 106, 125, 0.07); }
+    .status-tag.ok { color: var(--green); font-weight: 700; }
+    .status-tag.bad { color: var(--red); font-weight: 700; }
+    .labels { color: var(--muted); }
+    .telegram-tag { font-weight: 700; }
+
+    .toolbar { display: flex; gap: 10px; flex-wrap: wrap; }
+
+    @media (max-width: 1180px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 720px) {
+      .shell { padding: 16px; }
+      .brand h1 { font-size: 22px; }
+      .big-state { font-size: 24px; }
+      table, thead, tbody, th, td, tr { font-size: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <div class="brand-row">
+        <div class="brand">
+          <div class="brand-mark">AI</div>
+          <div>
+            <h1>AI Surveillance Dashboard</h1>
+            <p>Camera always on. PIR decides when recognition and alerts run.</p>
+          </div>
+        </div>
+        <div class="device-pill" id="deviceId">Device: pi-cam-01</div>
+      </div>
+
+      <div class="status-grid">
+        <div class="status-card"><div class="label">Camera</div><div id="cameraStatus" class="value ok">ALWAYS ONLINE</div></div>
+        <div class="status-card"><div class="label">Firebase</div><div id="firebaseStatus" class="value warn">Disconnected</div></div>
+        <div class="status-card"><div class="label">Vision API</div><div id="visionStatus" class="value warn">Inactive</div></div>
+        <div class="status-card"><div class="label">PIR</div><div id="pirStatus" class="value warn">PIR: STANDBY</div></div>
+        <div class="status-card"><div class="label">Countdown</div><div id="countdownStatus" class="value mono">Scanning: 0s remaining</div></div>
+      </div>
+    </section>
+
+    <section class="layout">
+      <article class="panel">
+        <h2>Live Camera Feed</h2>
+        <div class="live-frame">
+          <img src="/video_feed" alt="Live camera feed" />
+        </div>
+        <div class="feed-meta">
+          <span>Annotated stream from the always-on monitor.</span>
+          <span class="mono" id="lastMotion">Last motion: --</span>
+        </div>
+      </article>
+
+      <article class="panel verification">
+        <h2>Face Verification Panel</h2>
+        <div class="verification-box">
+          <div id="verificationState" class="big-state bad">UNKNOWN — ALERT</div>
+          <div class="detail-grid">
+            <div class="metric"><span>Name</span><strong id="lastName">--</strong></div>
+            <div class="metric"><span>Confidence</span><strong id="lastConfidence">--</strong></div>
+            <div class="metric"><span>Vision API Labels</span><strong id="lastLabels">--</strong></div>
+            <div class="metric"><span>Timestamp</span><strong id="lastTimestamp">--</strong></div>
+            <div class="metric"><span>Telegram Sent</span><strong id="lastTelegram">--</strong></div>
+          </div>
+        </div>
+      </article>
+
+      <article class="panel">
+        <h2>Enroll New User</h2>
+        <div class="enroll-form">
+          <input class="input" id="personName" type="text" placeholder="Person Name" autocomplete="off" />
+          <div class="toolbar">
+            <button class="button" id="enrollButton">Capture & Enroll</button>
+            <button class="button secondary" id="scanNowButton">Scan Now</button>
+          </div>
+          <div class="message" id="enrollMessage">Use the live frame to capture a new face. The monitor will reload encodings immediately.</div>
+          <div>
+            <div class="label" style="margin-bottom: 10px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.12em;">Enrolled Users</div>
+            <ul class="user-list" id="userList"></ul>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section class="alerts">
+      <div class="alerts-header">
+        <div>
+          <h2>Recent Alerts Log</h2>
+          <div class="subtitle">Last 20 Firebase events, refreshed every 3 seconds.</div>
+        </div>
+        <div class="subtitle mono" id="refreshStamp">Updating...</div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Timestamp</th>
+            <th>Person</th>
+            <th>Status</th>
+            <th>Confidence</th>
+            <th>Vision API Labels</th>
+            <th>Telegram Sent</th>
+          </tr>
+        </thead>
+        <tbody id="alertsBody">
+          <tr><td colspan="6">Loading events...</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </div>
+
+  <script>
+    const statusNodes = {
+      deviceId: document.getElementById('deviceId'),
+      camera: document.getElementById('cameraStatus'),
+      firebase: document.getElementById('firebaseStatus'),
+      vision: document.getElementById('visionStatus'),
+      pir: document.getElementById('pirStatus'),
+      countdown: document.getElementById('countdownStatus'),
+      lastMotion: document.getElementById('lastMotion'),
+      verificationState: document.getElementById('verificationState'),
+      lastName: document.getElementById('lastName'),
+      lastConfidence: document.getElementById('lastConfidence'),
+      lastLabels: document.getElementById('lastLabels'),
+      lastTimestamp: document.getElementById('lastTimestamp'),
+      lastTelegram: document.getElementById('lastTelegram'),
+      alertsBody: document.getElementById('alertsBody'),
+      refreshStamp: document.getElementById('refreshStamp'),
+      userList: document.getElementById('userList'),
+      enrollMessage: document.getElementById('enrollMessage'),
+      personName: document.getElementById('personName'),
+      enrollButton: document.getElementById('enrollButton'),
+      scanNowButton: document.getElementById('scanNowButton'),
+    };
+
+    function labelList(event) {
+      const labels = event.vision_labels || event.visionLabels || event.labels || [];
+      if (!labels.length) return '--';
+      return labels.map((item) => item.description || item.name || item).join(', ');
+    }
+
+    function setLatestFromEvent(event) {
+      if (!event) {
+        statusNodes.verificationState.textContent = 'WAITING';
+        statusNodes.verificationState.className = 'big-state bad';
+        return;
+      }
+
+      const recognised = String(event.status || '').toUpperCase() === 'RECOGNISED';
+      statusNodes.verificationState.textContent = recognised ? `VERIFIED — ${event.name || 'Unknown'}` : 'UNKNOWN — ALERT';
+      statusNodes.verificationState.className = recognised ? 'big-state ok' : 'big-state bad';
+      statusNodes.lastName.textContent = event.name || 'Unknown';
+      statusNodes.lastConfidence.textContent = `${Number(event.confidence || 0).toFixed(1)}%`;
+      statusNodes.lastLabels.textContent = labelList(event);
+      statusNodes.lastTimestamp.textContent = event.timestamp || '--';
+      statusNodes.lastTelegram.textContent = event.telegram_sent ? 'Yes' : 'No';
+    }
+
+    function renderUsers(users) {
+      const items = (users || []).map((user) => `<li>${user}</li>`).join('');
+      statusNodes.userList.innerHTML = items || '<li>No enrolled users yet</li>';
+    }
+
+    async function refreshStatus() {
+      try {
+        const response = await fetch('/api/status', { cache: 'no-store' });
+        if (!response.ok) return;
+        const status = await response.json();
+
+        statusNodes.deviceId.textContent = `Device: ${status.device_id || 'pi-cam-01'}`;
+        statusNodes.camera.textContent = status.camera || 'ALWAYS ONLINE';
+        statusNodes.camera.className = 'value ok';
+        statusNodes.firebase.textContent = status.firebase || 'Disconnected';
+        statusNodes.firebase.className = `value ${String(status.firebase).toLowerCase() === 'connected' ? 'ok' : 'warn'}`;
+        statusNodes.vision.textContent = status.vision_api || 'Inactive';
+        statusNodes.vision.className = `value ${String(status.vision_api).toLowerCase() === 'active' ? 'ok' : 'warn'}`;
+        statusNodes.pir.textContent = status.countdown_label || 'PIR: STANDBY';
+        statusNodes.pir.className = `value ${status.scan_active ? 'ok' : 'warn'}`;
+        statusNodes.countdown.textContent = status.scan_active ? `Scanning: ${Number(status.seconds_remaining || 0)}s remaining` : 'Scanning: 0s remaining';
+        statusNodes.lastMotion.textContent = `Last motion: ${status.last_motion || '--'}`;
+        renderUsers(status.known_users || []);
+        setLatestFromEvent(status.last_event);
+      } catch (_) {}
+    }
+
+    async function refreshAlerts() {
+      try {
+        const response = await fetch('/api/recognitions?device=pi-cam-01', { cache: 'no-store' });
+        if (!response.ok) return;
+        const data = await response.json();
+        const events = data.events || [];
+
+        const rows = events.map((event) => {
+          const recognised = String(event.status || '').toUpperCase() === 'RECOGNISED';
+          const statusClass = recognised ? 'ok' : 'bad';
+          const rowClass = recognised ? 'recognised' : 'unknown';
+          const confidence = Number(event.confidence || 0).toFixed(1);
+          const labels = labelList(event);
+          return `
+            <tr class="${rowClass}">
+              <td class="mono">${event.timestamp || '--'}</td>
+              <td>${event.name || 'Unknown'}</td>
+              <td class="status-tag ${statusClass}">${recognised ? 'RECOGNISED' : 'UNKNOWN'}</td>
+              <td class="mono">${confidence}%</td>
+              <td class="labels">${labels}</td>
+              <td class="telegram-tag">${event.telegram_sent ? 'Yes' : 'No'}</td>
+            </tr>
+          `;
+        }).join('');
+
+        statusNodes.alertsBody.innerHTML = rows || '<tr><td colspan="6">No detections yet.</td></tr>';
+        if (events.length) {
+          setLatestFromEvent(events[0]);
+        }
+        statusNodes.refreshStamp.textContent = `Updated ${new Date().toLocaleTimeString()}`;
+      } catch (_) {}
+    }
+
+    async function enrollFace() {
+      const name = statusNodes.personName.value.trim();
+      if (!name) {
+        statusNodes.enrollMessage.textContent = 'Enter a person name first.';
+        return;
+      }
+      statusNodes.enrollMessage.textContent = 'Capturing from live frame...';
+      try {
+        const response = await fetch('/enroll', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ person_name: name }),
+        });
+        const data = await response.json();
+        statusNodes.enrollMessage.textContent = data.message || 'Enrollment complete.';
+        if (response.ok) {
+          statusNodes.personName.value = '';
+          await refreshStatus();
+        }
+      } catch (_) {
+        statusNodes.enrollMessage.textContent = 'Enrollment failed.';
+      }
+    }
+
+    async function triggerScanNow() {
+      try {
+        await fetch('/api/scan_now', { method: 'POST' });
+        statusNodes.enrollMessage.textContent = 'Manual scan requested.';
+      } catch (_) {}
+    }
+
+    statusNodes.enrollButton.addEventListener('click', enrollFace);
+    statusNodes.scanNowButton.addEventListener('click', triggerScanNow);
+    statusNodes.personName.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') enrollFace();
+    });
+
+    refreshStatus();
+    refreshAlerts();
+    setInterval(refreshStatus, 1000);
+    setInterval(refreshAlerts, 3000);
+  </script>
+</body>
+</html>

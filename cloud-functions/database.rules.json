@@ -1,0 +1,12 @@
+{
+  "rules": {
+    "recognitions": {
+      "$deviceId": {
+        ".read": "auth != null && auth.token.deviceId === $deviceId",
+        "$frameId": {
+          ".write": "auth != null && auth.token.admin === true"
+        }
+      }
+    }
+  }
+}
