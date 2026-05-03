@@ -15,7 +15,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from threading import Lock
+from threading import Lock, Thread
 
 import cv2
 import face_recognition
@@ -69,6 +69,8 @@ CAMERA_WIDTH = int(os.getenv("FRAME_WIDTH", "640"))
 CAMERA_HEIGHT = int(os.getenv("FRAME_HEIGHT", "480"))
 IDLE_SLEEP_SECONDS = float(os.getenv("IDLE_SLEEP_SECONDS", "0.08"))
 ACTIVE_SLEEP_SECONDS = float(os.getenv("ACTIVE_SLEEP_SECONDS", "0.10"))
+FRAME_CAPTURE_INTERVAL_SECONDS = float(os.getenv("FRAME_CAPTURE_INTERVAL_SECONDS", "0.05"))
+RECOGNITION_INTERVAL_SECONDS = float(os.getenv("RECOGNITION_INTERVAL_SECONDS", "2.0"))
 STATUS_FILE = Path(os.getenv("SURVEILLANCE_STATUS_FILE", "/tmp/iot_status.json"))
 RAW_FRAME_FILE = Path(os.getenv("SURVEILLANCE_RAW_FRAME_FILE", "/tmp/iot_latest_raw.jpg"))
 ANNOTATED_FRAME_FILE = Path(os.getenv("SURVEILLANCE_ANNOTATED_FRAME_FILE", "/tmp/iot_latest_annotated.jpg"))
@@ -101,11 +103,16 @@ class SurveillanceDaemon:
         self.firebase_ready = False
         self.vision_ready = False
         self.reload_lock = Lock()
+        self.frame_lock = Lock()
         self.last_motion_time = 0.0
         self.last_motion_wallclock = 0.0
         self.scan_active_until = 0.0
         self.last_status_write = 0.0
+        self.last_recognition_time = 0.0
         self.last_frame_result: dict | None = None
+        self.latest_frame: np.ndarray | None = None
+        self.capture_thread: Thread | None = None
+        self.stop_requested = False
         self._init_gpio()
         self._init_camera()
         self._init_firebase()
@@ -214,12 +221,23 @@ class SurveillanceDaemon:
     def _save_frame(self, path: Path, frame: np.ndarray):
         path.parent.mkdir(parents=True, exist_ok=True)
         temp_path = path.with_suffix(path.suffix + ".tmp")
-        ok, buffer = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+        ok, buffer = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 50])
         if not ok:
             return False
         temp_path.write_bytes(buffer.tobytes())
         temp_path.replace(path)
         return True
+
+    def _capture_loop(self):
+        while not self.stop_requested:
+            frame = self._capture_frame()
+            if frame is None:
+                time.sleep(FRAME_CAPTURE_INTERVAL_SECONDS)
+                continue
+            with self.frame_lock:
+                self.latest_frame = frame.copy()
+            self._save_frame(RAW_FRAME_FILE, frame)
+            time.sleep(FRAME_CAPTURE_INTERVAL_SECONDS)
 
     def _load_face_image(self, file_path: Path):
         image = face_recognition.load_image_file(str(file_path))
@@ -270,6 +288,69 @@ class SurveillanceDaemon:
         except Exception as exc:
             self._log(f"[CAMERA] Capture failed: {exc}")
             return None
+
+    def _annotate_frame_with_faces(self, frame_bgr: np.ndarray, active: bool = False, seconds_remaining: int = 0):
+        """Detect faces and annotate with rectangles + status overlay."""
+        rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        annotated = frame_bgr.copy()
+        
+        # Detect faces (lightweight, always run for visual feedback)
+        try:
+            locations = face_recognition.face_locations(rgb, number_of_times_to_upsample=1, model="hog")
+            encodings = face_recognition.face_encodings(rgb, locations)
+            
+            for location, encoding in zip(locations, encodings):
+                top, right, bottom, left = location
+                color = (0, 0, 255)  # Red by default (unknown)
+                label = "Unknown"
+                
+                # Only check against known faces if active (save CPU when idle)
+                if active and self.known_encodings:
+                    matches = face_recognition.compare_faces(self.known_encodings, encoding, tolerance=FACE_TOLERANCE)
+                    distances = face_recognition.face_distance(self.known_encodings, encoding)
+                    if len(distances) and True in matches:
+                        index = int(np.argmin(distances))
+                        label = self.known_names[index]
+                        color = (0, 255, 0)  # Green for recognized
+                
+                # Draw rectangle
+                cv2.rectangle(annotated, (left, top), (right, bottom), color, 3)
+                # Draw label background
+                cv2.rectangle(annotated, (left, max(0, top - 30)), (right, top), color, cv2.FILLED)
+                cv2.putText(annotated, label, (left + 6, max(16, top - 8)),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
+        except Exception:
+            pass
+        
+        # Add status overlay
+        h, w = annotated.shape[:2]
+        overlay_y_top = 20
+        overlay_y_bottom = h - 20
+        
+        # Top-left: status
+        if active:
+            status_text = f"🔍 SCANNING ({seconds_remaining}s)"
+            color_status = (0, 255, 0)
+        else:
+            status_text = "📹 MONITORING"
+            color_status = (100, 100, 200)
+        
+        cv2.putText(annotated, status_text, (10, overlay_y_top + 25),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, color_status, 2, cv2.LINE_AA)
+        
+        # Bottom-right: timestamp
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        cv2.putText(annotated, timestamp, (w - 280, overlay_y_bottom),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1, cv2.LINE_AA)
+        
+        # Add loading indicator animation (dots) if scanning
+        if active:
+            frame_count = int(time.time() * 3) % 3  # 3 dots cycling
+            loading_dots = "● " * (frame_count + 1) + "○ " * (2 - frame_count)
+            cv2.putText(annotated, loading_dots, (10, overlay_y_top + 50),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2, cv2.LINE_AA)
+        
+        return annotated
 
     def _read_motion(self):
         if not self.gpio_ready:
@@ -328,20 +409,25 @@ class SurveillanceDaemon:
     def _send_telegram_alert(self, caption: str, image_path: Path):
         if not self.telegram_enabled or self.telegram_bot is None or not image_path.exists():
             return False
-        try:
-            async def _send():
-                with image_path.open("rb") as image_file:
-                    await self.telegram_bot.send_photo(
-                        chat_id=TELEGRAM_CHAT_ID,
-                        photo=image_file,
-                        caption=caption,
-                    )
-
-            asyncio.run(_send())
-            return True
-        except Exception as exc:
-            self._log(f"[TELEGRAM] Send failed: {exc}")
-            return False
+        
+        # Send Telegram in background thread to avoid blocking main loop
+        def _send_bg():
+            try:
+                async def _send():
+                    with image_path.open("rb") as image_file:
+                        await self.telegram_bot.send_photo(
+                            chat_id=TELEGRAM_CHAT_ID,
+                            photo=image_file,
+                            caption=caption,
+                        )
+                asyncio.run(_send())
+            except Exception as exc:
+                self._log(f"[TELEGRAM] Send failed: {exc}")
+        
+        import threading
+        thread = threading.Thread(target=_send_bg, daemon=True)
+        thread.start()
+        return True
 
     def _run_vision_labels(self, frame_bgr: np.ndarray):
         if not self.vision_ready or self.vision_client is None:
@@ -524,6 +610,9 @@ class SurveillanceDaemon:
         if not self.known_encodings:
             self._log("[FACES] Warning: 0 known faces loaded")
         self._set_leds(False, False, False)
+        self.stop_requested = False
+        self.capture_thread = Thread(target=self._capture_loop, daemon=True)
+        self.capture_thread.start()
 
         while True:
             self._refresh_faces_if_requested()
@@ -540,28 +629,45 @@ class SurveillanceDaemon:
             active = time.monotonic() < self.scan_active_until
             seconds_remaining = int(max(0, self.scan_active_until - time.monotonic())) if active else 0
 
-            frame = self._capture_frame()
+            with self.frame_lock:
+                frame = self.latest_frame.copy() if self.latest_frame is not None else None
+
             if frame is None:
                 self._update_status(motion=motion, active=active, seconds_remaining=seconds_remaining, last_event=self.last_frame_result)
                 time.sleep(ACTIVE_SLEEP_SECONDS)
                 continue
 
-            self._save_frame(RAW_FRAME_FILE, frame)
-
             if active:
-                annotated, events, labels = self._process_frame(frame)
-                self._save_frame(ANNOTATED_FRAME_FILE, annotated)
-                if events:
-                    self._log(f"[SCAN] {len(events)} event(s) processed with labels: {labels}")
+                now = time.monotonic()
+                if (now - self.last_recognition_time) >= RECOGNITION_INTERVAL_SECONDS:
+                    annotated, events, labels = self._process_frame(frame)
+                    self.last_recognition_time = now
+                    # Enhance with status overlay
+                    enhanced = self._annotate_frame_with_faces(annotated, active=True, seconds_remaining=seconds_remaining)
+                    self._save_frame(ANNOTATED_FRAME_FILE, enhanced)
+                    if events:
+                        self._log(f"[SCAN] {len(events)} event(s) processed with labels: {labels}")
+                else:
+                    # Show quick face detection without full recognition
+                    annotated = self._annotate_frame_with_faces(frame, active=True, seconds_remaining=seconds_remaining)
+                    self._save_frame(ANNOTATED_FRAME_FILE, annotated)
                 self._update_status(motion=motion, active=True, seconds_remaining=seconds_remaining, last_event=self.last_frame_result)
                 time.sleep(ACTIVE_SLEEP_SECONDS)
                 continue
 
-            self._save_frame(ANNOTATED_FRAME_FILE, frame)
+            # Idle mode: show monitoring status with face detection
+            annotated = self._annotate_frame_with_faces(frame, active=False, seconds_remaining=0)
+            self._save_frame(ANNOTATED_FRAME_FILE, annotated)
             self._update_status(motion=motion, active=False, seconds_remaining=0, last_event=self.last_frame_result)
             time.sleep(IDLE_SLEEP_SECONDS)
 
     def cleanup(self):
+        self.stop_requested = True
+        if self.capture_thread is not None:
+            try:
+                self.capture_thread.join(timeout=1.0)
+            except Exception:
+                pass
         try:
             self._set_leds(False, False, False)
         except Exception:

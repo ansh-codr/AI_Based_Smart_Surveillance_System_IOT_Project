@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 from pathlib import Path
 
@@ -45,6 +46,7 @@ except Exception:
 
 
 firebase_app_cache = {}
+frame_lock = threading.Lock()
 
 
 def _json_default():
@@ -110,18 +112,19 @@ def _stream_cached_frame(path: Path, fallback_text: str):
     while True:
         payload = last_payload
         try:
-            if path.exists():
-                stat_result = path.stat()
-                if stat_result.st_mtime > last_mtime:
-                    payload = path.read_bytes()
-                    last_payload = payload
-                    last_mtime = stat_result.st_mtime
+            with frame_lock:
+                if path.exists():
+                    stat_result = path.stat()
+                    if stat_result.st_mtime > last_mtime:
+                        payload = path.read_bytes()
+                        last_payload = payload
+                        last_mtime = stat_result.st_mtime
             if payload is None:
                 payload = _empty_frame(fallback_text)
             yield _multipart_frame(payload)
         except Exception:
             yield _multipart_frame(_empty_frame(fallback_text))
-        time.sleep(0.08)
+        time.sleep(0.033)
 
 
 def _next_face_filename(person_dir: Path, person_name: str):
@@ -158,9 +161,24 @@ def create_blueprint(config, state, events, face_service, firebase_service):
             return dashboard_path.read_text(encoding="utf-8")
         return "<h1>Dashboard not found</h1>", 404
 
-    @bp.route("/video_feed")
-    def video_feed():
-        return Response(_stream_cached_frame(ANNOTATED_FRAME_FILE, "Camera starting..."), mimetype="multipart/x-mixed-replace; boundary=frame")
+    @bp.route("/api/frame")
+    def api_frame():
+        """Get the latest live raw frame as base64 JPEG for polling."""
+        try:
+            with frame_lock:
+                source_path = RAW_FRAME_FILE if RAW_FRAME_FILE.exists() else ANNOTATED_FRAME_FILE
+                if source_path.exists():
+                    frame_raw = cv2.imread(str(source_path))
+                    if frame_raw is not None:
+                        frame_small = cv2.resize(frame_raw, (320, 240))
+                        ret, buffer = cv2.imencode('.jpg', frame_small, [cv2.IMWRITE_JPEG_QUALITY, 40])
+                        if ret:
+                            import base64
+                            encoded = base64.b64encode(buffer).decode('utf-8')
+                            return jsonify({"frame": encoded})
+        except Exception:
+            pass
+        return jsonify({"frame": ""})
 
     @bp.route("/status")
     def status():
@@ -249,5 +267,47 @@ def create_blueprint(config, state, events, face_service, firebase_service):
     @bp.route("/api/enrolled_users")
     def enrolled_users():
         return jsonify({"users": sorted(set(face_service.known_names)), "count": len(face_service.known_encodings)})
+
+    @bp.route('/api/recognize_frame', methods=['POST'])
+    def recognize_frame():
+        try:
+            file = request.files.get('frame')
+            if not file:
+                return jsonify({"status": "NO_FRAME"})
+
+            # Save temp file
+            temp_path = '/tmp/device_frame.jpg'
+            file.save(temp_path)
+
+            # Run face recognition on received frame
+            import face_recognition as fr
+            import numpy as _np
+
+            image = fr.load_image_file(temp_path)
+            locations = fr.face_locations(image, number_of_times_to_upsample=1, model="hog")
+            encodings = fr.face_encodings(image, locations)
+
+            if not encodings:
+                return jsonify({"status": "NO_FACE", "name": "", "confidence": 0})
+
+            for encoding in encodings:
+                if not face_service.known_encodings:
+                    continue
+                matches = fr.compare_faces(face_service.known_encodings, encoding, tolerance=0.45)
+                distances = fr.face_distance(face_service.known_encodings, encoding)
+
+                if True in matches and len(distances) > 0:
+                    best_idx = int(_np.argmin(distances))
+                    name = face_service.known_names[best_idx]
+                    confidence = float((1 - distances[best_idx]) * 100)
+                    return jsonify({
+                        "status": "RECOGNISED",
+                        "name": name,
+                        "confidence": confidence
+                    })
+
+            return jsonify({"status": "UNKNOWN", "name": "Unknown", "confidence": 0})
+        except Exception as e:
+            return jsonify({"status": "ERROR", "error": str(e)})
 
     return bp

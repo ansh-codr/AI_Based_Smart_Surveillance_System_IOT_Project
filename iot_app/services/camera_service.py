@@ -24,8 +24,9 @@ class CameraService:
         try:
             cam = Picamera2()
             cam.configure(
-                cam.create_video_configuration(
-                    main={"size": (self.config.frame_width, self.config.frame_height)}
+                cam.create_preview_configuration(
+                    main={"format": "RGB888", "size": (640, 480)},
+                    controls={"FrameRate": 15},
                 )
             )
             cam.start()

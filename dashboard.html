@@ -324,6 +324,55 @@
 
     .toolbar { display: flex; gap: 10px; flex-wrap: wrap; }
 
+    /* Scanning indicator animation */
+    .scan-indicator {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--green);
+      margin-right: 8px;
+      animation: pulse 1.5s infinite;
+    }
+
+    .scan-indicator.inactive {
+      animation: none;
+      background: var(--amber);
+      opacity: 0.5;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(1.2); }
+    }
+
+    /* Live feed overlay for scanning status */
+    .live-frame-overlay {
+      position: relative;
+      display: inline-block;
+      width: 100%;
+    }
+
+    .live-frame-overlay-badge {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      padding: 6px 12px;
+      border-radius: 20px;
+      background: rgba(0, 0, 0, 0.6);
+      color: var(--green);
+      font-size: 12px;
+      font-weight: bold;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      z-index: 10;
+    }
+
+    .live-frame-overlay-badge.idle {
+      color: var(--amber);
+    }
+
     @media (max-width: 1180px) {
       .layout { grid-template-columns: 1fr; }
     }
@@ -362,9 +411,35 @@
     <section class="layout">
       <article class="panel">
         <h2>Live Camera Feed</h2>
-        <div class="live-frame">
-          <img src="/video_feed" alt="Live camera feed" />
+        <div style="display:flex; gap:10px; margin-bottom:10px;">
+            <button id="btnPiCam" onclick="switchToPiCamera()" 
+                style="background:#00d4aa; color:#000; border:none; 
+                       padding:8px 16px; border-radius:6px; 
+                       cursor:pointer; font-weight:bold;">
+                🎥 Pi Camera
+            </button>
+            <button id="btnDeviceCam" onclick="switchToDeviceCamera()"
+                style="background:#333; color:#fff; border:none;
+                       padding:8px 16px; border-radius:6px;
+                       cursor:pointer; font-weight:bold;">
+                💻 My Device Camera
+            </button>
         </div>
+        <div class="live-frame" style="position: relative;">
+          <img id="cameraImg" style="width:100%; border-radius:8px;" alt="Live camera feed" />
+          <video id="deviceVideo" 
+                 autoplay playsinline muted
+                 style="width:100%; border-radius:8px; display:none;">
+          </video>
+          <div id="scanIndicatorBadge" class="live-frame-overlay-badge idle" style="display: none;">
+            <span class="scan-indicator inactive"></span>
+            <span>MONITORING</span>
+          </div>
+        </div>
+        <p id="cameraSourceLabel" 
+           style="text-align:center; color:#888; font-size:12px; margin-top:4px;">
+           Streaming from Pi camera
+        </p>
         <div class="feed-meta">
           <span>Annotated stream from the always-on monitor.</span>
           <span class="mono" id="lastMotion">Last motion: --</span>
@@ -452,6 +527,131 @@
       scanNowButton: document.getElementById('scanNowButton'),
     };
 
+    // Camera mode: 'pi' or 'device'
+    let cameraMode = 'pi';
+    let deviceStream = null;
+    let deviceFrameInterval = null;
+
+    function switchToPiCamera() {
+      cameraMode = 'pi';
+
+      // Stop device camera if running
+      if (deviceStream) {
+        try { deviceStream.getTracks().forEach(t => t.stop()); } catch(e) {}
+        deviceStream = null;
+      }
+      if (deviceFrameInterval) {
+        clearInterval(deviceFrameInterval);
+        deviceFrameInterval = null;
+      }
+
+      // Hide video element, show img element
+      const video = document.getElementById('deviceVideo');
+      if (video) video.style.display = 'none';
+      document.getElementById('cameraImg').style.display = 'block';
+
+      // Update button styles
+      document.getElementById('btnPiCam').style.background = '#00d4aa';
+      document.getElementById('btnPiCam').style.color = '#000';
+      document.getElementById('btnDeviceCam').style.background = '#333';
+      document.getElementById('btnDeviceCam').style.color = '#fff';
+
+      // Update label
+      document.getElementById('cameraSourceLabel').textContent = 'Streaming from Pi camera';
+
+      // Resume Pi frame polling
+      updateFrame();
+    }
+
+    function switchToDeviceCamera() {
+      cameraMode = 'device';
+
+      // Request browser camera access
+      navigator.mediaDevices.getUserMedia({ 
+        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+        audio: false
+      })
+      .then(stream => {
+        deviceStream = stream;
+
+        // Show video element, hide img element
+        const video = document.getElementById('deviceVideo');
+        video.srcObject = stream;
+        video.style.display = 'block';
+        document.getElementById('cameraImg').style.display = 'none';
+
+        // Update button styles
+        document.getElementById('btnDeviceCam').style.background = '#00d4aa';
+        document.getElementById('btnDeviceCam').style.color = '#000';
+        document.getElementById('btnPiCam').style.background = '#333';
+        document.getElementById('btnPiCam').style.color = '#fff';
+
+        // Update label
+        document.getElementById('cameraSourceLabel').textContent = '💻 Streaming from your device camera';
+
+        // Send device frames to Pi for recognition
+        startSendingDeviceFrames(video);
+      })
+      .catch(err => {
+        alert('Camera access denied or not available: ' + (err && err.message));
+        switchToPiCamera();
+      });
+    }
+
+    // Send device camera frames to Pi backend for face recognition
+    function startSendingDeviceFrames(video) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 640;
+      canvas.height = 480;
+      const ctx = canvas.getContext('2d');
+
+      if (deviceFrameInterval) clearInterval(deviceFrameInterval);
+      deviceFrameInterval = setInterval(() => {
+        if (cameraMode !== 'device' || !deviceStream) return;
+        try {
+          ctx.drawImage(video, 0, 0, 640, 480);
+          canvas.toBlob(blob => {
+            if (!blob) return;
+            const formData = new FormData();
+            formData.append('frame', blob, 'frame.jpg');
+            fetch('/api/recognize_frame', { method: 'POST', body: formData })
+              .then(r => r.json())
+              .then(data => { updateRecognitionDisplay(data); })
+              .catch(() => {});
+          }, 'image/jpeg', 0.6);
+        } catch (e) {}
+      }, 2000);
+    }
+
+    function updateRecognitionDisplay(data) {
+      // Update the existing verification panel fields
+      if (!data) return;
+      const recognised = String(data.status || '').toUpperCase() === 'RECOGNISED';
+      statusNodes.verificationState.textContent = recognised ? `VERIFIED — ${data.name || 'Unknown'}` : 'UNKNOWN — ALERT';
+      statusNodes.verificationState.className = recognised ? 'big-state ok' : 'big-state bad';
+      statusNodes.lastName.textContent = data.name || 'Unknown';
+      statusNodes.lastConfidence.textContent = `${Number(data.confidence || 0).toFixed(1)}%`;
+      statusNodes.lastLabels.textContent = data.labels ? data.labels.join(', ') : '--';
+      statusNodes.lastTimestamp.textContent = data.timestamp || new Date().toLocaleTimeString();
+    }
+
+    // Modify existing updateFrame to respect camera mode
+    function updateFrame() {
+      if (cameraMode !== 'pi') return; // stop polling if device camera active
+      fetch('/api/frame')
+        .then(r => r.json())
+        .then(data => {
+          if (data.frame) {
+            document.getElementById('cameraImg').src = 'data:image/jpeg;base64,' + data.frame;
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (cameraMode === 'pi') setTimeout(updateFrame, 100);
+        });
+    }
+    updateFrame();
+
     function labelList(event) {
       const labels = event.vision_labels || event.visionLabels || event.labels || [];
       if (!labels.length) return '--';
@@ -499,6 +699,20 @@
         statusNodes.lastMotion.textContent = `Last motion: ${status.last_motion || '--'}`;
         renderUsers(status.known_users || []);
         setLatestFromEvent(status.last_event);
+        
+        // Update scanning indicator badge on camera feed
+        const badge = document.getElementById('scanIndicatorBadge');
+        const indicator = badge.querySelector('.scan-indicator');
+        if (status.scan_active) {
+          badge.style.display = 'flex';
+          badge.className = 'live-frame-overlay-badge';
+          indicator.className = 'scan-indicator';
+          badge.innerHTML = `<span class="scan-indicator"></span><span>🔍 SCANNING (${status.seconds_remaining}s)</span>`;
+        } else {
+          badge.style.display = 'flex';
+          badge.className = 'live-frame-overlay-badge idle';
+          badge.innerHTML = `<span class="scan-indicator inactive"></span><span>📹 MONITORING</span>`;
+        }
       } catch (_) {}
     }
 
